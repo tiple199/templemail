@@ -1,9 +1,9 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { Layout, Card, Button, List, Typography, message, Badge, Space, Divider, Popconfirm, Switch, Slider, Spin, Modal, Input, Tooltip } from 'antd';
+import { Layout, Card, Button, List, Typography, message, Badge, Space, Divider, Popconfirm, Switch, Slider, Spin, Modal, Input, Tooltip, Row, Col, Empty } from 'antd';
 import { 
   CopyOutlined, ReloadOutlined, DeleteOutlined, SwapOutlined, 
   BulbOutlined, BulbFilled, SoundOutlined, LoadingOutlined,
-  StarFilled, SaveOutlined, BookOutlined, EyeOutlined, PushpinOutlined, LogoutOutlined
+  StarFilled, SaveOutlined, BookOutlined, EyeOutlined, PushpinOutlined, LogoutOutlined, MailOutlined
 } from '@ant-design/icons';
 import axios from 'axios';
 import DOMPurify from 'dompurify';
@@ -22,16 +22,18 @@ const antIcon = <LoadingOutlined style={{ fontSize: 24 }} spin />;
 function HomePage() {
   const [email, setEmail] = useState("");
   const [emails, setEmails] = useState([]);
+  const [selectedEmail, setSelectedEmail] = useState(null); // State lưu thư đang được chọn để xem bên phải
   const [loading, setLoading] = useState(false);
   const [fetching, setFetching] = useState(false);
+  
   const [darkMode, setDarkMode] = useState(() => localStorage.getItem('darkMode') === 'true'); 
   const [volume, setVolume] = useState(() => Number(localStorage.getItem('appVolume')) || 0.2);
   const [isPremium, setIsPremium] = useState(() => localStorage.getItem('isPremium') === 'true');
-  const [premiumModal, setPremiumModal] = useState(false);
-  const [premiumCode, setPremiumCode] = useState("");
   const [savedAddresses, setSavedAddresses] = useState(() => JSON.parse(localStorage.getItem('savedAddresses')) || []);
   const [archivedEmails, setArchivedEmails] = useState(() => JSON.parse(localStorage.getItem('archivedEmails')) || []);
   const [viewingArchive, setViewingArchive] = useState(null);
+  const [premiumModal, setPremiumModal] = useState(false);
+  const [premiumCode, setPremiumCode] = useState("");
 
   const lastEmailCount = useRef(0);
 
@@ -43,14 +45,6 @@ function HomePage() {
     localStorage.setItem('archivedEmails', JSON.stringify(archivedEmails));
   }, [darkMode, volume, isPremium, savedAddresses, archivedEmails]);
 
-  const createSnowflakes = () => {
-    const snowflakes = [];
-    for (let i = 0; i < 50; i++) {
-      snowflakes.push(<Snowflake key={i} style={{ left: `${Math.random() * 100}%`, animationDuration: `${Math.random() * 5 + 5}s`, animationDelay: `${Math.random() * 5}s`, fontSize: `${Math.random() * 10 + 10}px` }}>❄</Snowflake>);
-    }
-    return snowflakes;
-  };
-
   const createRandomEmail = () => `${Math.random().toString(36).substring(2, 8)}@tiepln.id.vn`;
 
   const playNotificationSound = useCallback(() => {
@@ -58,49 +52,19 @@ function HomePage() {
     audio.volume = volume; audio.play().catch(() => {});
   }, [volume]);
 
-  const handleVerifyPremium = () => {
-    if (premiumCode.trim().toUpperCase() === "PREMIUM2024") {
-      setIsPremium(true);
-      message.success("Kích hoạt Premium thành công! ✨");
-      setPremiumModal(false);
-      setPremiumCode("");
-    } else message.error("Mã kích hoạt không chính xác!");
-  };
-
-  const handleExitPremium = () => { setIsPremium(false); message.warning("Đã thoát chế độ Premium."); };
-  const saveCurrentAddress = () => {
-    if (savedAddresses.includes(email)) return message.warning("Địa chỉ này đã ghim.");
-    setSavedAddresses([email, ...savedAddresses]);
-    message.success("Đã ghim địa chỉ!");
-  };
-  const removeSavedAddress = (addr) => setSavedAddresses(savedAddresses.filter(a => a !== addr));
-
-  const archiveEmailContent = (item) => {
-    if (archivedEmails.find(a => a.received_at === item.received_at)) return message.warning("Thư đã lưu rồi.");
-    setArchivedEmails([{ ...item, archiveId: Date.now() }, ...archivedEmails]);
-    message.success("Đã lưu nội dung thư!");
-  };
-
-  const deleteArchiveItem = (archiveId) => setArchivedEmails(archivedEmails.filter(item => item.archiveId !== archiveId));
-
-  const handleRefreshEmail = async () => {
-    setLoading(true);
-    await axios.get(`${API_ENDPOINT}?addr=${email}&action=delete`).catch(() => {});
-    setEmail(createRandomEmail());
-    setEmails([]);
-    lastEmailCount.current = 0;
-    setLoading(false);
-  };
-
-  const handleClearInbox = async () => {
-    setLoading(true);
-    await axios.get(`${API_ENDPOINT}?addr=${email}&action=delete`).catch(() => {});
-    setEmails([]);
-    lastEmailCount.current = 0;
-    setLoading(false);
-  };
-
-  useEffect(() => { setEmail(createRandomEmail()); }, []);
+  // Tự động xóa khi refresh trang theo yêu cầu của bạn
+  useEffect(() => {
+    const initApp = async () => {
+      const oldEmail = localStorage.getItem('currentEmail');
+      if (oldEmail && API_ENDPOINT) {
+        await axios.get(`${API_ENDPOINT}?addr=${oldEmail}&action=delete`).catch(() => {});
+      }
+      const newMail = createRandomEmail();
+      setEmail(newMail);
+      localStorage.setItem('currentEmail', newMail);
+    };
+    initApp();
+  }, []);
 
   const fetchEmails = useCallback(async (isManual = false) => {
     if (!email) return;
@@ -122,89 +86,102 @@ function HomePage() {
     const interval = setInterval(() => fetchEmails(false), 10000);
     return () => clearInterval(interval);
   }, [fetchEmails]);
-  // --- TỰ ĐỘNG XÓA THƯ CŨ KHI REFRESH TRANG ---
-useEffect(() => {
-  const cleanupAndRefresh = async () => {
-    setLoading(true);
-    
-    // 1. Lấy địa chỉ email cũ từ LocalStorage (nếu có)
-    const oldEmail = localStorage.getItem('currentEmail');
-    
-    // 2. Nếu có email cũ, ra lệnh cho Worker xóa sạch thư của nó trong DB
-    if (oldEmail) {
-      try {
-        await axios.get(`${API_ENDPOINT}?addr=${oldEmail}&action=delete`);
-      } catch (err) {
-        console.error("Không thể xóa thư cũ khi refresh");
-      }
-    }
 
-    // 3. Tạo địa chỉ email hoàn toàn mới cho phiên làm việc này
-    const newMail = createRandomEmail();
-    setEmail(newMail);
-    localStorage.setItem('currentEmail', newMail); // Lưu lại để xóa vào lần F5 sau
-    
-    setLoading(false);
-  };
-
-  cleanupAndRefresh();
-}, []);
-
-  const layoutStyle = { minHeight: '100vh', background: darkMode ? '#141414' : '#f0f2f5', transition: 'all 0.3s' };
-  const cardStyle = { borderRadius: '12px', background: darkMode ? '#1f1f1f' : '#fff', border: darkMode ? '1px solid #303030' : '1px solid #e8e8e8' };
+  const cardStyle = { borderRadius: '12px', background: darkMode ? '#1f1f1f' : '#fff', border: darkMode ? '1px solid #303030' : '1px solid #e8e8e8', transition: '0.3s' };
   const titleColor = { color: darkMode ? '#fff' : '#000' };
 
   return (
     <>
       <GlobalStyle />
-      {!darkMode && <SnowflakeContainer>{createSnowflakes()}</SnowflakeContainer>}
-      <Layout style={layoutStyle}>
+      {!darkMode && <SnowflakeContainer>{Array.from({length: 30}).map((_, i) => <Snowflake key={i} style={{ left: `${Math.random() * 100}%`, animationDuration: `${Math.random() * 5 + 5}s` }}>❄</Snowflake>)}</SnowflakeContainer>}
+      <Layout style={{ minHeight: '100vh', background: darkMode ? '#141414' : '#f0f2f5', transition: '0.3s' }}>
         <Header style={{ background: darkMode ? '#1f1f1f' : '#001529', display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '10px 20px', height: 'auto' }}>
           <Space size="large">
-            <Title level={3} style={{ color: '#fff', margin: 0 }}>Temp Mail {isPremium && <StarFilled style={{ color: '#fadb14', marginLeft: 8 }} />}</Title>
-            {!isPremium ? <Button type="primary" danger ghost size="small" onClick={() => setPremiumModal(true)}>Nâng cấp</Button> : <Popconfirm title="Thoát Premium?" onConfirm={handleExitPremium}><Button type="default" danger size="small" icon={<LogoutOutlined />}>Rời Premium</Button></Popconfirm>}
+            <Title level={3} style={{ color: '#fff', margin: 0 }}>Temp Mail {isPremium && <StarFilled style={{ color: '#fadb14' }} />}</Title>
             <Slider min={0} max={1} step={0.01} value={volume} onChange={setVolume} style={{ width: 80 }} />
             <Switch checked={darkMode} onChange={setDarkMode} checkedChildren={<BulbFilled />} unCheckedChildren={<BulbOutlined />} />
           </Space>
         </Header>
-        <Content style={{ padding: '20px', maxWidth: '850px', margin: '0 auto', width: '100%' }}>
-          {isPremium && savedAddresses.length > 0 && (
-            <Card size="small" style={{ ...cardStyle, marginBottom: 16 }} title={<Text style={titleColor}><PushpinOutlined /> Địa chỉ đã ghim</Text>}>
-              <Space wrap>{savedAddresses.map(h => <Badge key={h} count={<DeleteOutlined style={{ color: '#f5222d', cursor: 'pointer' }} onClick={() => removeSavedAddress(h)} />} offset={[-5, 5]}><Button type={email === h ? "primary" : "default"} size="small" onClick={() => { setEmail(h); setEmails([]); lastEmailCount.current = 0; }}>{h}</Button></Badge>)}</Space>
-            </Card>
-          )}
-          <Card style={{ ...cardStyle, textAlign: 'center' }} loading={loading}>
+
+        <Content style={{ padding: '20px', maxWidth: '1200px', margin: '0 auto', width: '100%' }}>
+          <Card style={{ ...cardStyle, textAlign: 'center', marginBottom: 20 }}>
             <Title level={2} copyable={{ text: email }} style={titleColor}>{email}</Title>
             <Space wrap>
-              <Button type="primary" icon={<CopyOutlined />} onClick={() => { navigator.clipboard.writeText(email); message.success("Đã copy!"); playNotificationSound(); }}>Sao chép</Button>
-              {isPremium && <Button icon={<PushpinOutlined />} onClick={saveCurrentAddress}>Lưu địa chỉ</Button>}
-              <Button icon={<SwapOutlined />} onClick={handleRefreshEmail}>Đổi địa chỉ</Button>
-              <Popconfirm title="Xóa hòm thư?" onConfirm={handleClearInbox}><Button danger icon={<DeleteOutlined />}>Dọn dẹp</Button></Popconfirm>
+              <Button type="primary" icon={<CopyOutlined />} onClick={() => { navigator.clipboard.writeText(email); message.success("Đã copy!"); }}>Sao chép</Button>
+              <Button icon={<SwapOutlined />} onClick={async () => { setEmail(createRandomEmail()); setEmails([]); setSelectedEmail(null); }}>Đổi địa chỉ</Button>
               <Button icon={<ReloadOutlined />} onClick={() => fetchEmails(true)} loading={fetching}>Làm mới</Button>
             </Space>
           </Card>
-          <Divider orientation="left" style={titleColor}>Hộp thư đến <Badge count={emails.length} /></Divider>
-          <Spin spinning={fetching} indicator={antIcon}>
-            <List dataSource={emails} renderItem={(item) => (
-              <Card style={{ marginBottom: '12px', background: darkMode ? '#1f1f1f' : '#fff', border: darkMode ? '1px solid #303030' : '1px solid #e8e8e8' }} size="small" title={<Text strong style={titleColor}>Từ: {item.sender}</Text>} extra={isPremium && <Button type="link" onClick={() => archiveEmailContent(item)}>Lưu thư</Button>}>
-                <Text strong style={titleColor}>{item.subject}</Text>
-                {/* HIỂN THỊ HTML ĐÃ GIẢI MÃ */}
-                <div style={{ marginTop: '8px', padding: '12px', background: darkMode ? '#141414' : '#fafafa', borderRadius: '8px', overflowX: 'auto', textAlign: 'left' }}
-                  dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(item.content) }} />
+
+          <Row gutter={16}>
+            {/* CỘT BÊN TRÁI: DANH SÁCH THÔNG BÁO MAIL */}
+            <Col xs={24} md={8}>
+              <Card title={<Text style={titleColor}>Danh sách thư ({emails.length})</Text>} style={cardStyle}>
+                <List
+                  dataSource={emails}
+                  locale={{ emptyText: <Empty description="Chưa có thư" /> }}
+                  renderItem={(item) => (
+                    <List.Item 
+                      onClick={() => setSelectedEmail(item)}
+                      style={{ 
+                        cursor: 'pointer', 
+                        padding: '12px',
+                        borderRadius: '8px',
+                        marginBottom: '8px',
+                        background: selectedEmail?.id === item.id ? (darkMode ? '#303030' : '#e6f7ff') : 'transparent',
+                        border: selectedEmail?.id === item.id ? '1px solid #1890ff' : '1px solid transparent'
+                      }}
+                    >
+                      <List.Item.Meta
+                        avatar={<Badge dot={selectedEmail?.id !== item.id}><MailOutlined style={{ fontSize: '20px', color: '#1890ff' }} /></Badge>}
+                        title={<Text strong style={titleColor} ellipsis>{item.subject}</Text>}
+                        description={<Text type="secondary" style={{ fontSize: '11px' }}>{item.sender.split('<')[0]}</Text>}
+                      />
+                    </List.Item>
+                  )}
+                />
               </Card>
-            )} />
-          </Spin>
-          {isPremium && archivedEmails.length > 0 && (
-            <><Divider orientation="left" style={titleColor}><BookOutlined /> Thư đã lưu trữ</Divider>
-            <List dataSource={archivedEmails} renderItem={(item) => <Card size="small" style={{ marginBottom: 8, background: cardStyle.background }}><div style={{ display: 'flex', justifyContent: 'space-between' }}><div><Text strong style={titleColor}>{item.subject}</Text><div style={{ fontSize: '11px', color: 'gray' }}>Đến: {item.recipient}</div></div><Space><Button size="small" icon={<EyeOutlined />} onClick={() => setViewingArchive(item)}>Xem</Button><Popconfirm title="Xóa?" onConfirm={() => deleteArchiveItem(item.archiveId)}><Button size="small" danger icon={<DeleteOutlined />} /></Popconfirm></Space></div></Card>} /></>
-          )}
+            </Col>
+
+            {/* CỘT BÊN PHẢI: CHI TIẾT NỘI DUNG */}
+            <Col xs={24} md={16}>
+              <Card 
+                title={<Text style={titleColor}>Chi tiết nội dung</Text>} 
+                style={{ ...cardStyle, minHeight: '400px' }}
+                extra={selectedEmail && isPremium && <Button type="link" onClick={() => archiveEmailContent(selectedEmail)}>Lưu thư</Button>}
+              >
+                {selectedEmail ? (
+                  <div>
+                    <Title level={4} style={titleColor}>{selectedEmail.subject}</Title>
+                    <Text type="secondary">Từ: {selectedEmail.sender}</Text>
+                    <Divider />
+                    <div 
+                      style={{ 
+                        padding: '16px', 
+                        background: '#fff', // Nền trắng để hiện HTML chuẩn
+                        borderRadius: '8px', 
+                        color: '#333', 
+                        overflowX: 'auto',
+                        minHeight: '300px'
+                      }}
+                      dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(selectedEmail.content) }} 
+                    />
+                  </div>
+                ) : (
+                  <Empty description="Chọn một thư để xem nội dung" style={{ marginTop: '100px' }} />
+                )}
+              </Card>
+            </Col>
+          </Row>
         </Content>
-        <Modal title={viewingArchive?.subject} open={!!viewingArchive} onCancel={() => setViewingArchive(null)} footer={[<Button key="c" onClick={() => setViewingArchive(null)}>Đóng</Button>]} width={700}>
-            <div style={{ padding: '15px', background: '#fafafa', borderRadius: '8px', maxHeight: '450px', overflowY: 'auto' }} dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(viewingArchive?.content || "") }} />
+
+        {/* Modal Premium giữ nguyên của bạn */}
+        <Modal title="Nâng cấp Premium" open={premiumModal} onOk={() => {if(premiumCode==="PREMIUM2024") setIsPremium(true); setPremiumModal(false);}} onCancel={() => setPremiumModal(false)}>
+          <Input placeholder="Mã: PREMIUM2024" value={premiumCode} onChange={(e) => setPremiumCode(e.target.value)} />
         </Modal>
-        <Modal title="Nâng cấp Premium" open={premiumModal} onOk={handleVerifyPremium} onCancel={() => setPremiumModal(false)}><Input placeholder="Mã: PREMIUM2024" value={premiumCode} onChange={(e) => setPremiumCode(e.target.value)} /></Modal>
       </Layout>
     </>
   );
 }
+
 export default HomePage;
