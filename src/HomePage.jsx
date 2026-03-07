@@ -1,9 +1,9 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { Layout, Card, Button, List, Typography, message, Badge, Space, Divider, Popconfirm, Switch, Slider, Spin, Modal, Input } from 'antd';
+import { Layout, Card, Button, List, Typography, message, Badge, Space, Divider, Popconfirm, Switch, Slider, Spin, Modal, Input, Tooltip } from 'antd';
 import { 
   CopyOutlined, ReloadOutlined, DeleteOutlined, SwapOutlined, 
   BulbOutlined, BulbFilled, SoundOutlined, LoadingOutlined,
-  StarFilled, HistoryOutlined, SaveOutlined, BookOutlined, EyeOutlined 
+  StarFilled, SaveOutlined, BookOutlined, EyeOutlined, PushpinOutlined 
 } from '@ant-design/icons';
 import axios from 'axios';
 import DOMPurify from 'dompurify';
@@ -52,21 +52,21 @@ function HomePage() {
   const [isPremium, setIsPremium] = useState(() => localStorage.getItem('isPremium') === 'true');
   const [premiumModal, setPremiumModal] = useState(false);
   const [premiumCode, setPremiumCode] = useState("");
-  const [emailHistory, setEmailHistory] = useState(() => JSON.parse(localStorage.getItem('emailHistory')) || []);
+  
+  // THAY ĐỔI: Chuyển từ History sang Saved Addresses
+  const [savedAddresses, setSavedAddresses] = useState(() => JSON.parse(localStorage.getItem('savedAddresses')) || []);
   const [archivedEmails, setArchivedEmails] = useState(() => JSON.parse(localStorage.getItem('archivedEmails')) || []);
 
-  // State để xem chi tiết thư trong kho lưu trữ
   const [viewingArchive, setViewingArchive] = useState(null);
-
   const lastEmailCount = useRef(0);
 
   useEffect(() => {
     localStorage.setItem('darkMode', darkMode);
     localStorage.setItem('appVolume', volume);
     localStorage.setItem('isPremium', isPremium);
-    localStorage.setItem('emailHistory', JSON.stringify(emailHistory));
+    localStorage.setItem('savedAddresses', JSON.stringify(savedAddresses));
     localStorage.setItem('archivedEmails', JSON.stringify(archivedEmails));
-  }, [darkMode, volume, isPremium, emailHistory, archivedEmails]);
+  }, [darkMode, volume, isPremium, savedAddresses, archivedEmails]);
 
   const createSnowflakes = () => {
     const snowflakes = [];
@@ -104,54 +104,48 @@ function HomePage() {
     }
   };
 
+  // HÀM MỚI: Lưu địa chỉ email hiện tại
+  const saveCurrentAddress = () => {
+    if (savedAddresses.includes(email)) {
+      message.warning("Địa chỉ này đã được lưu trước đó.");
+      return;
+    }
+    setSavedAddresses([email, ...savedAddresses]);
+    message.success("Đã lưu địa chỉ vào danh sách cá nhân!");
+  };
+
+  const removeSavedAddress = (addr) => {
+    setSavedAddresses(savedAddresses.filter(a => a !== addr));
+    message.info("Đã xóa địa chỉ khỏi danh sách.");
+  };
+
   const archiveEmailContent = (item) => {
-    if (archivedEmails.find(a => a.id === item.id || (a.received_at === item.received_at && a.subject === item.subject))) {
+    if (archivedEmails.find(a => a.archiveId === item.id || (a.received_at === item.received_at && a.subject === item.subject))) {
       message.warning("Thư này đã có trong kho.");
       return;
     }
     setArchivedEmails([{ ...item, archiveId: Date.now() }, ...archivedEmails]);
-    message.success("Đã lưu vào kho lâu dài!");
+    message.success("Đã lưu nội dung thư!");
   };
 
-  // Hàm xóa từng bản ghi trong kho
   const deleteArchiveItem = (archiveId) => {
     setArchivedEmails(archivedEmails.filter(item => item.archiveId !== archiveId));
-    message.info("Đã xóa bản ghi khỏi kho lưu trữ.");
-  };
-
-  const deleteInbox = async (targetEmail) => {
-    try {
-      await axios.get(`${API_ENDPOINT}?addr=${targetEmail}&action=delete`);
-    } catch (err) { console.error("Lỗi xóa thư"); }
+    message.info("Đã xóa thư khỏi kho.");
   };
 
   const handleRefreshEmail = async () => {
     setLoading(true);
-    await deleteInbox(email);
+    await axios.get(`${API_ENDPOINT}?addr=${email}&action=delete`).catch(() => {});
     const newMail = createRandomEmail();
-    if (!emailHistory.includes(newMail)) {
-        setEmailHistory([newMail, ...emailHistory].slice(0, 5));
-    }
     setEmail(newMail);
     setEmails([]);
     lastEmailCount.current = 0;
-    message.success("Đã đổi địa chỉ!");
-    setLoading(false);
-  };
-
-  const handleClearInbox = async () => {
-    setLoading(true);
-    await deleteInbox(email);
-    setEmails([]);
-    lastEmailCount.current = 0;
-    message.warning("Hộp thư trống!");
+    message.success("Đã đổi địa chỉ mới!");
     setLoading(false);
   };
 
   useEffect(() => {
-    const initialMail = createRandomEmail();
-    setEmail(initialMail);
-    setEmailHistory(prev => [initialMail, ...prev].slice(0, 5));
+    setEmail(createRandomEmail());
   }, []);
 
   const fetchEmails = useCallback(async (isManual = false) => {
@@ -202,11 +196,14 @@ function HomePage() {
         
         <Content style={{ padding: '20px', maxWidth: '850px', margin: '0 auto', width: '100%' }}>
           
-          {isPremium && emailHistory.length > 0 && (
-            <Card size="small" style={{ ...cardStyle, marginBottom: 16 }} title={<Text style={titleColor}><HistoryOutlined /> Gần đây</Text>}>
+          {/* DANH SÁCH ĐỊA CHỈ ĐÃ LƯU (PREMIUM) */}
+          {isPremium && savedAddresses.length > 0 && (
+            <Card size="small" style={{ ...cardStyle, marginBottom: 16 }} title={<Text style={titleColor}><PushpinOutlined /> Địa chỉ email của bạn</Text>}>
                 <Space wrap>
-                    {emailHistory.map(h => (
-                        <Button key={h} type={email === h ? "primary" : "default"} size="small" onClick={() => { setEmail(h); setEmails([]); lastEmailCount.current = 0; }}>{h}</Button>
+                    {savedAddresses.map(h => (
+                        <Badge key={h} count={<DeleteOutlined style={{ color: '#f5222d', cursor: 'pointer', fontSize: '12px' }} onClick={() => removeSavedAddress(h)} />} offset={[-5, 5]}>
+                          <Button type={email === h ? "primary" : "default"} size="small" onClick={() => { setEmail(h); setEmails([]); lastEmailCount.current = 0; }}>{h}</Button>
+                        </Badge>
                     ))}
                 </Space>
             </Card>
@@ -216,15 +213,23 @@ function HomePage() {
               <Title level={2} copyable={{ text: email }} style={titleColor}>{email}</Title>
               <Space wrap>
                 <Button type="primary" icon={<CopyOutlined />} onClick={() => { navigator.clipboard.writeText(email); message.success("Copy!"); playNotificationSound(); }}>Copy</Button>
-                <Button icon={<SwapOutlined />} onClick={handleRefreshEmail} loading={loading}>Đổi</Button>
-                <Popconfirm title="Xóa?" onConfirm={handleClearInbox}><Button danger icon={<DeleteOutlined />}>Xóa</Button></Popconfirm>
-                <Button icon={<ReloadOutlined />} onClick={() => fetchEmails(true)} loading={fetching}>Mới</Button>
+                
+                {/* NÚT LƯU ĐỊA CHỈ CHO PREMIUM */}
+                {isPremium && (
+                  <Tooltip title="Lưu địa chỉ này vào danh sách cá nhân">
+                    <Button icon={<PushpinOutlined />} onClick={saveCurrentAddress}>Lưu địa chỉ</Button>
+                  </Tooltip>
+                )}
+
+                <Button icon={<SwapOutlined />} onClick={handleRefreshEmail} loading={loading}>Đổi ngẫu nhiên</Button>
+                <Popconfirm title="Xóa toàn bộ thư hiện tại?" onConfirm={handleClearInbox}><Button danger icon={<DeleteOutlined />}>Dọn dẹp</Button></Popconfirm>
+                <Button icon={<ReloadOutlined />} onClick={() => fetchEmails(true)} loading={fetching}>Làm mới</Button>
               </Space>
           </Card>
 
           <Divider orientation="left" style={titleColor}>Hộp thư đến <Badge count={emails.length} /></Divider>
 
-          <Spin spinning={fetching} tip="Loading...">
+          <Spin spinning={fetching} tip="Đang tải...">
             <List
               dataSource={emails}
               renderItem={(item) => (
@@ -232,7 +237,7 @@ function HomePage() {
                   style={{ marginBottom: '12px', background: darkMode ? '#1f1f1f' : '#fff', border: darkMode ? '1px solid #303030' : '1px solid #e8e8e8' }} 
                   size="small" 
                   title={<Text strong style={titleColor}>Từ: {item.sender}</Text>}
-                  extra={isPremium && <Button type="link" icon={<SaveOutlined />} onClick={() => archiveEmailContent(item)}>Lưu trữ</Button>}
+                  extra={isPremium && <Button type="link" icon={<SaveOutlined />} onClick={() => archiveEmailContent(item)}>Lưu nội dung</Button>}
                 >
                   <Text strong style={titleColor}>{item.subject}</Text>
                   <div style={{ marginTop: '8px', padding: '10px', background: darkMode ? '#141414' : '#fafafa', borderRadius: '8px', color: darkMode ? '#d9d9d9' : '#333', overflowX: 'auto' }}
@@ -242,10 +247,10 @@ function HomePage() {
             />
           </Spin>
 
-          {/* KHO LƯU TRỮ PREMIUM CẢI TIẾN */}
+          {/* KHO LƯU TRỮ NỘI DUNG THƯ (PREMIUM) */}
           {isPremium && archivedEmails.length > 0 && (
             <>
-                <Divider orientation="left" style={titleColor}><BookOutlined /> Kho lưu trữ thư</Divider>
+                <Divider orientation="left" style={titleColor}><BookOutlined /> Thư đã lưu trữ</Divider>
                 <List
                     dataSource={archivedEmails}
                     renderItem={(item) => (
@@ -253,11 +258,11 @@ function HomePage() {
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                                 <div style={{ flex: 1 }}>
                                     <Text strong style={titleColor}>{item.subject}</Text>
-                                    <div style={{ fontSize: '11px', color: 'gray' }}>Gửi tới: {item.recipient}</div>
+                                    <div style={{ fontSize: '11px', color: 'gray' }}>Người nhận: {item.recipient}</div>
                                 </div>
                                 <Space>
-                                    <Button size="small" icon={<EyeOutlined />} onClick={() => setViewingArchive(item)}>Xem</Button>
-                                    <Popconfirm title="Xóa khỏi kho?" onConfirm={() => deleteArchiveItem(item.archiveId)}>
+                                    <Button size="small" icon={<EyeOutlined />} onClick={() => setViewingArchive(item)}>Xem lại</Button>
+                                    <Popconfirm title="Xóa thư này?" onConfirm={() => deleteArchiveItem(item.archiveId)}>
                                         <Button size="small" danger icon={<DeleteOutlined />} />
                                     </Popconfirm>
                                 </Space>
@@ -269,26 +274,17 @@ function HomePage() {
           )}
         </Content>
 
-        {/* Modal xem chi tiết thư trong kho */}
-        <Modal
-            title={viewingArchive?.subject}
-            open={!!viewingArchive}
-            onCancel={() => setViewingArchive(null)}
-            footer={[<Button key="close" onClick={() => setViewingArchive(null)}>Đóng</Button>]}
-            width={700}
-        >
+        <Modal title={viewingArchive?.subject} open={!!viewingArchive} onCancel={() => setViewingArchive(null)} footer={[<Button key="close" onClick={() => setViewingArchive(null)}>Đóng</Button>]} width={700}>
             <div style={{ marginBottom: 10 }}>
                 <Text type="secondary">Từ: {viewingArchive?.sender}</Text><br/>
-                <Text type="secondary">Đến: {viewingArchive?.recipient}</Text>
+                <Text type="secondary">Nhận lúc: {new Date(viewingArchive?.received_at).toLocaleString()}</Text>
             </div>
-            <div 
-                style={{ padding: '15px', background: '#fafafa', border: '1px solid #eee', borderRadius: '8px', maxHeight: '400px', overflowY: 'auto' }}
-                dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(viewingArchive?.content || "") }} 
-            />
+            <div style={{ padding: '15px', background: '#fafafa', border: '1px solid #eee', borderRadius: '8px', maxHeight: '400px', overflowY: 'auto' }}
+                dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(viewingArchive?.content || "") }} />
         </Modal>
 
-        <Modal title="Premium" open={premiumModal} onOk={handleVerifyPremium} onCancel={() => setPremiumModal(false)}>
-            <Input placeholder="Mã: PREMIUM2024" value={premiumCode} onChange={(e) => setPremiumCode(e.target.value)} />
+        <Modal title="Kích hoạt Premium" open={premiumModal} onOk={handleVerifyPremium} onCancel={() => setPremiumModal(false)}>
+            <Input placeholder="Nhập mã code (PREMIUM2024)" value={premiumCode} onChange={(e) => setPremiumCode(e.target.value)} />
         </Modal>
       </Layout>
     </>
