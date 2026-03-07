@@ -122,6 +122,33 @@ function HomePage() {
     const interval = setInterval(() => fetchEmails(false), 10000);
     return () => clearInterval(interval);
   }, [fetchEmails]);
+  // --- TỰ ĐỘNG XÓA THƯ CŨ KHI REFRESH TRANG ---
+useEffect(() => {
+  const cleanupAndRefresh = async () => {
+    setLoading(true);
+    
+    // 1. Lấy địa chỉ email cũ từ LocalStorage (nếu có)
+    const oldEmail = localStorage.getItem('currentEmail');
+    
+    // 2. Nếu có email cũ, ra lệnh cho Worker xóa sạch thư của nó trong DB
+    if (oldEmail) {
+      try {
+        await axios.get(`${API_ENDPOINT}?addr=${oldEmail}&action=delete`);
+      } catch (err) {
+        console.error("Không thể xóa thư cũ khi refresh");
+      }
+    }
+
+    // 3. Tạo địa chỉ email hoàn toàn mới cho phiên làm việc này
+    const newMail = createRandomEmail();
+    setEmail(newMail);
+    localStorage.setItem('currentEmail', newMail); // Lưu lại để xóa vào lần F5 sau
+    
+    setLoading(false);
+  };
+
+  cleanupAndRefresh();
+}, []);
 
   const layoutStyle = { minHeight: '100vh', background: darkMode ? '#141414' : '#f0f2f5', transition: 'all 0.3s' };
   const cardStyle = { borderRadius: '12px', background: darkMode ? '#1f1f1f' : '#fff', border: darkMode ? '1px solid #303030' : '1px solid #e8e8e8' };
