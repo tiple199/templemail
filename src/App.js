@@ -1,15 +1,15 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { Layout, Card, Button, List, Typography, message, Badge, Space, Divider, Popconfirm, Switch } from 'antd';
-import { CopyOutlined, ReloadOutlined, DeleteOutlined, SwapOutlined, MailOutlined, BulbOutlined, BulbFilled } from '@ant-design/icons';
+import { Layout, Card, Button, List, Typography, message, Badge, Space, Divider, Popconfirm, Switch, Slider, Spin } from 'antd';
+import { CopyOutlined, ReloadOutlined, DeleteOutlined, SwapOutlined, BulbOutlined, BulbFilled, SoundOutlined, LoadingOutlined } from '@ant-design/icons';
 import axios from 'axios';
-import DOMPurify from 'dompurify'; // Thư viện làm sạch HTML
-import styled, { keyframes, createGlobalStyle } from 'styled-components'; // Để tạo hiệu ứng tuyết rơi
+import DOMPurify from 'dompurify';
+import styled, { keyframes, createGlobalStyle } from 'styled-components';
 
 const { Header, Content } = Layout;
 const { Title, Text } = Typography;
 const API_ENDPOINT = process.env.REACT_APP_API_URL;
 
-// --- ❄️ HIỆU ỨNG TUYẾT RƠI (SNOWFLAKES) ---
+// --- ❄️ HIỆU ỨNG TUYẾT RƠI ---
 const snowfall = keyframes`
   0% { transform: translateY(0); }
   100% { transform: translateY(110vh); }
@@ -37,14 +37,28 @@ const GlobalStyle = createGlobalStyle`
   }
 `;
 
+// Icon xoay cho Loading
+const antIcon = <LoadingOutlined style={{ fontSize: 24 }} spin />;
+
 function App() {
   const [email, setEmail] = useState("");
   const [emails, setEmails] = useState([]);
   const [loading, setLoading] = useState(false);
-  const [darkMode, setDarkMode] = useState(false); // Trạng thái Dark Mode
+  const [fetching, setFetching] = useState(false); // State riêng cho việc load danh sách mail
+  
+  const [darkMode, setDarkMode] = useState(() => localStorage.getItem('darkMode') === 'true'); 
+  const [volume, setVolume] = useState(() => Number(localStorage.getItem('appVolume')) || 0.2);
+  
   const lastEmailCount = useRef(0);
 
-  // Tạo bông tuyết
+  useEffect(() => {
+    localStorage.setItem('darkMode', darkMode);
+  }, [darkMode]);
+
+  useEffect(() => {
+    localStorage.setItem('appVolume', volume);
+  }, [volume]);
+
   const createSnowflakes = () => {
     const snowflakes = [];
     for (let i = 0; i < 50; i++) {
@@ -64,11 +78,11 @@ function App() {
     return `${randomId}@tiepln.id.vn`;
   };
 
-  // Hàm phát tiếng "Ting"
-  const playNotificationSound = () => {
-    const audio = new Audio('https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3');
-    audio.play().catch(e => console.log("Trình duyệt chặn tự động phát âm thanh"));
-  };
+  const playNotificationSound = useCallback(() => {
+    const audio = new Audio('https://assets.mixkit.co/active_storage/sfx/2358/2358-preview.mp3');
+    audio.volume = volume; 
+    audio.play().catch(e => console.log("Trình duyệt chặn phát âm thanh"));
+  }, [volume]);
 
   const deleteInbox = async (targetEmail) => {
     try {
@@ -80,12 +94,12 @@ function App() {
 
   const handleRefreshEmail = async () => {
     setLoading(true);
-    await deleteInbox(email); // Xóa thư cũ trước khi đổi
+    await deleteInbox(email);
     const newMail = createRandomEmail();
     setEmail(newMail);
     setEmails([]);
     lastEmailCount.current = 0;
-    message.success("Đã đổi địa chỉ mới và dọn dẹp thư cũ!");
+    message.success("Đã đổi địa chỉ mới!");
     setLoading(false);
   };
 
@@ -94,7 +108,7 @@ function App() {
     await deleteInbox(email);
     setEmails([]);
     lastEmailCount.current = 0;
-    message.warning("Đã xóa sạch hộp thư!");
+    message.warning("Hộp thư đã trống!");
     setLoading(false);
   };
 
@@ -102,13 +116,13 @@ function App() {
     setEmail(createRandomEmail());
   }, []);
 
-  const fetchEmails = useCallback(async () => {
+  const fetchEmails = useCallback(async (isManual = false) => {
     if (!email) return;
+    if (isManual) setFetching(true); // Chỉ hiện xoay khi bấm nút hoặc đổi mail
     try {
       const res = await axios.get(`${API_ENDPOINT}?addr=${email}`);
       const newEmails = res.data;
       
-      // Kiểm tra nếu có mail mới thì phát âm thanh
       if (newEmails.length > lastEmailCount.current) {
         playNotificationSound();
         message.info("Bạn có thư mới!");
@@ -116,17 +130,16 @@ function App() {
       
       setEmails(newEmails);
       lastEmailCount.current = newEmails.length;
-    } catch (err) { /* silent error */ }
-  }, [email]);
+    } catch (err) { /* silent */ }
+    setFetching(false);
+  }, [email, playNotificationSound]);
 
-  // Tự động làm mới mỗi 10 giây
   useEffect(() => {
     fetchEmails();
-    const interval = setInterval(fetchEmails, 10000);
+    const interval = setInterval(() => fetchEmails(false), 10000);
     return () => clearInterval(interval);
   }, [fetchEmails]);
 
-  // Cấu hình giao diện Dark/Light
   const layoutStyle = darkMode ? {
     minHeight: '100vh', background: '#141414', transition: 'all 0.3s'
   } : {
@@ -145,7 +158,6 @@ function App() {
   return (
     <>
       <GlobalStyle />
-      {/* ❄️ Hiệu ứng tuyết rơi chỉ hiện khi ở chế độ Light Mode */}
       {!darkMode && (
         <SnowflakeContainer>
           {createSnowflakes()}
@@ -153,18 +165,39 @@ function App() {
       )}
 
       <Layout style={layoutStyle}>
-        <Header style={{ background: darkMode ? '#1f1f1f' : '#001529', textAlign: 'center', transition: 'all 0.3s' }}>
-          <Space>
-            <Title level={3} style={{ color: '#fff', margin: '15px 0' }}>Temp Mail Premium</Title>
-            <Divider type="vertical" />
-            {/* 💡 Công tắc chuyển đổi Dark Mode */}
+        <Header style={{ 
+          background: darkMode ? '#1f1f1f' : '#001529', 
+          textAlign: 'center', 
+          transition: 'all 0.3s',
+          display: 'flex',
+          justifyContent: 'center',
+          alignItems: 'center',
+          padding: '0 20px',
+          height: 'auto',
+          flexWrap: 'wrap'
+        }}>
+          <Space size="large" style={{ padding: '10px 0' }}>
+            <Title level={3} style={{ color: '#fff', margin: 0 }}>Temp Mail Premium</Title>
+            
+            <Divider type="vertical" style={{ background: '#444' }} />
+            
+            <div style={{ display: 'flex', alignItems: 'center', width: '120px' }}>
+              <SoundOutlined style={{ color: '#fff', marginRight: 8 }} />
+              <Slider 
+                min={0} max={1} step={0.01} 
+                value={volume} onChange={setVolume} 
+                style={{ flex: 1 }}
+                tooltip={{ formatter: (val) => `${Math.round(val * 100)}%` }}
+              />
+            </div>
+
+            <Divider type="vertical" style={{ background: '#444' }} />
+
             <Switch
               checked={darkMode}
               onChange={(checked) => {
                 setDarkMode(checked);
-                // Kích hoạt âm thanh một lần để trình duyệt cấp quyền
                 playNotificationSound(); 
-                message.info(checked ? "Đã bật chế độ tối" : "Đã bật chế độ sáng");
               }}
               checkedChildren={<BulbFilled />}
               unCheckedChildren={<BulbOutlined />}
@@ -173,52 +206,66 @@ function App() {
         </Header>
         
         <Content style={{ padding: '30px', maxWidth: '850px', margin: '0 auto', width: '100%' }}>
-          <Card style={cardStyle}>
+          <Card style={cardStyle} loading={loading}>
             <Space direction="vertical" style={{ width: '100%' }}>
-              <Text type="secondary" style={textType}>Địa chỉ của bạn (Thư sẽ tự xóa khi bạn đổi địa chỉ):</Text>
+              <Text type="secondary" style={textType}>Địa chỉ của bạn:</Text>
               <Title level={2} copyable={{ text: email }} style={titleColor}>{email}</Title>
               <Space wrap>
                 <Button type="primary" size="large" icon={<CopyOutlined />} onClick={() => {
                   navigator.clipboard.writeText(email);
                   message.success("Đã copy!");
+                  playNotificationSound(); 
                 }}>Sao chép</Button>
                 
-                <Button size="large" icon={<SwapOutlined />} onClick={handleRefreshEmail} loading={loading}>Đổi địa chỉ mới</Button>
+                <Button size="large" icon={<SwapOutlined />} onClick={handleRefreshEmail} loading={loading}>Đổi địa chỉ</Button>
                 
-                <Popconfirm title="Xóa toàn bộ thư trong hộp này?" onConfirm={handleClearInbox} okText="Xóa" cancelText="Hủy">
+                <Popconfirm title="Xóa hộp thư?" onConfirm={handleClearInbox} okText="Xóa" cancelText="Hủy">
                   <Button size="large" danger icon={<DeleteOutlined />}>Xóa hộp thư</Button>
                 </Popconfirm>
 
-                <Button size="large" icon={<ReloadOutlined />} onClick={fetchEmails} loading={loading}>Làm mới</Button>
+                <Button size="large" icon={<ReloadOutlined />} onClick={() => fetchEmails(true)} loading={fetching}>Làm mới</Button>
               </Space>
             </Space>
           </Card>
 
-          <Divider orientation="left" style={titleColor}>Hộp thư đến <Badge count={emails.length} /></Divider>
+          <Divider orientation="left" style={titleColor}>
+            Hộp thư đến <Badge count={emails.length} style={{ marginLeft: 8 }} />
+          </Divider>
 
-          <List
-            dataSource={emails}
-            renderItem={(item) => (
-              <Card style={{ marginBottom: '12px', background: darkMode ? '#1f1f1f' : '#fff', border: darkMode ? '1px solid #303030' : '1px solid #e8e8e8', transition: 'all 0.3s' }} size="small" title={<Text strong style={titleColor}>Từ: {item.sender}</Text>}>
-                <Text strong style={titleColor}>{item.subject}</Text>
-                {/* 🛡️ Hiển thị HTML an toàn */}
-                <div 
+          {/* Hiệu ứng xoay khi tải danh sách mail */}
+          <Spin spinning={fetching} indicator={antIcon} tip="Đang kiểm tra thư mới...">
+            <List
+              dataSource={emails}
+              renderItem={(item) => (
+                <Card 
                   style={{ 
-                    marginTop: '8px', 
-                    padding: '15px', 
-                    background: darkMode ? '#141414' : '#fafafa', 
-                    border: darkMode ? '1px solid #303030' : '1px solid #eee', 
-                    borderRadius: '8px',
-                    color: darkMode ? 'rgba(255, 255, 255, 0.85)' : 'rgba(0, 0, 0, 0.85)',
-                    transition: 'all 0.3s'
-                  }}
-                  dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(item.content) }} 
-                />
-                <Text type="secondary" style={{ ...textType, fontSize: '12px' }}>Nhận lúc: {new Date(item.received_at).toLocaleString()}</Text>
-              </Card>
-            )}
-            locale={{ emptyText: <Text style={textType}>Đang chờ thư mới...</Text> }}
-          />
+                    marginBottom: '12px', 
+                    background: darkMode ? '#1f1f1f' : '#fff', 
+                    border: darkMode ? '1px solid #303030' : '1px solid #e8e8e8' 
+                  }} 
+                  size="small" 
+                  title={<Text strong style={titleColor}>Từ: {item.sender}</Text>}
+                >
+                  <Text strong style={titleColor}>{item.subject}</Text>
+                  <div 
+                    style={{ 
+                      marginTop: '8px', padding: '15px', 
+                      background: darkMode ? '#141414' : '#fafafa', 
+                      border: darkMode ? '1px solid #303030' : '1px solid #eee', 
+                      borderRadius: '8px',
+                      color: darkMode ? '#d9d9d9' : '#333',
+                      overflowX: 'auto'
+                    }}
+                    dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(item.content) }} 
+                  />
+                  <Text type="secondary" style={{ ...textType, fontSize: '12px', marginTop: 8, display: 'block' }}>
+                    Nhận lúc: {new Date(item.received_at).toLocaleString()}
+                  </Text>
+                </Card>
+              )}
+              locale={{ emptyText: <Text style={textType}>Hộp thư đang trống...</Text> }}
+            />
+          </Spin>
         </Content>
       </Layout>
     </>
